@@ -21,7 +21,7 @@ SLEEP_TIME = 1
 
 # ---------------- LOAD DATA ---------------- #
 df = pd.read_excel(
-    "Company_name_email_address_and_phone_number.xlsx",
+    "Company.xlsx",
     sheet_name="Sheet1"
 )
 
@@ -142,5 +142,6 @@ def index():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
 
 
