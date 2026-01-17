@@ -13,10 +13,12 @@ try:
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.chrome.service import Service
     from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
     SELENIUM_AVAILABLE = True
 except ImportError:
     SELENIUM_AVAILABLE = False
-    st.warning("Selenium not installed – falling back to basic scraping (prices may be missed)")
+    st.warning("Selenium not installed – using basic scraping only (prices may be missed)")
 
 # ---------------- CONFIG ---------------- #
 HEADERS = {
@@ -28,6 +30,7 @@ HEADERS = {
 }
 REQUEST_TIMEOUT = 12
 SLEEP_TIME = 1.5
+SELENIUM_WAIT_SEC = 6
 
 # ---------------- LOAD DATA ---------------- #
 EXCEL_FILE = "Companies.xlsx"
@@ -68,22 +71,22 @@ df = load_data()
 # ---------------- HELPERS ---------------- #
 def vendor_direct_search(company_name, search_term):
     term = quote(search_term.strip())
-    company = company_name.lower()
+    company_lower = company_name.lower()
 
-    if "thermo fisher" in company or "fisher scientific" in company:
+    if "thermo fisher" in company_lower or "fisher scientific" in company_lower:
         return f"https://www.thermofisher.com/search/results?query={term}"
-    elif "sigma-aldrich" in company:
+    elif "sigma-aldrich" in company_lower:
         return f"https://www.sigmaaldrich.com/US/en/search/{term}?focus=products&page=1&perpage=30&sort=relevance"
-    elif "medchemexpress" in company or "mce" in company:
+    elif "medchemexpress" in company_lower or "mce" in company_lower:
         return f"https://www.medchemexpress.com/search.html?kwd={term}"
-    elif "abcam" in company:
+    elif "abcam" in company_lower:
         return f"https://www.abcam.com/search?keywords={term}"
-    elif "qiagen" in company:
+    elif "qiagen" in company_lower:
         return f"https://www.qiagen.com/us/search?query={term}"
-    elif "stemcell" in company:
+    elif "stemcell" in company_lower:
         return f"https://www.stemcell.com/search?query={term}"
 
-    # Fallback: Google site-restricted search
+    # Google fallback
     site = df.loc[df["Company Name"] == company_name, "Website"].values[0]
     query = f'"{search_term}" site:{site}'
     url = f"https://www.google.com/search?q={quote(query)}"
@@ -108,14 +111,14 @@ def extract_price(text):
         r'USD[\s]*[\d,]+(?:\.\d{1,2})?',
         r'€[\s]*[\d,]+(?:\.\d{1,2})?',
         r'[\d,]+(?:\.\d{1,2})?[\s]*(?:USD|EUR|\$|€)',
-        r'Price:\s*[\$\€]?[\s]*[\d,]+(?:\.\d{1,2})?',
-        r'Request Quote|Call for price|Login for price|Quote required',
+        r'(?:Price|List Price|Your Price):\s*[\$\€]?[\s]*[\d,]+(?:\.\d{1,2})?',
+        r'Request Quote|Call for price|Login for price|Quote required|Contact us for pricing',
     ]
     for pat in patterns:
         match = re.search(pat, text, re.IGNORECASE)
         if match:
             return match.group(0).strip()
-    return "Not found (may require login/JS)"
+    return "Not found (may require interaction/JS)"
 
 def extract_email(text):
     emails = re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", text)
@@ -136,9 +139,9 @@ def scrape_product_page(url):
     except Exception as e:
         return {"price": f"Request error: {str(e)[:60]}", "email": "Error"}
 
-def scrape_with_selenium(url):
+def scrape_with_selenium(url, company_name):
     if not SELENIUM_AVAILABLE:
-        return "Selenium not available in this environment"
+        return "Selenium not available"
 
     if not url or "Not found" in url:
         return "No valid URL"
@@ -153,43 +156,67 @@ def scrape_with_selenium(url):
 
     service = Service(os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver"))
 
+    driver = None
     try:
         driver = webdriver.Chrome(service=service, options=options)
         driver.get(url)
-        time.sleep(4.5)  # Allow JS to load prices
+        time.sleep(3)
 
-        # Try specific selectors first
-        price_selectors = [
-            '[data-testid="price"]',
-            '.price', '.product-price', '[class*="price"]',
-            'span.price', 'div.price-amount', '[itemprop="price"]',
-            '.buybox-price', '.price-large', '.price-current',
-        ]
+        company_lower = company_name.lower()
 
-        for sel in price_selectors:
+        # Sigma-Aldrich specific handling
+        if "sigma-aldrich" in company_lower:
             try:
-                elem = driver.find_element(By.CSS_SELECTOR, sel)
-                price_text = elem.text.strip()
-                if price_text and any(c.isdigit() for c in price_text):
-                    driver.quit()
-                    return price_text
-            except:
-                continue
+                # Try to expand pricing section
+                expand_button = WebDriverWait(driver, SELENIUM_WAIT_SEC).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, ".expandArrow, [aria-label*='expand'], .pricing-toggle"))
+                )
+                expand_button.click()
+                time.sleep(2.5)
 
-        # Fallback: full body text
+                # Try common Sigma price table
+                price_table = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.ID, "productSizePriceQtyTable"))
+                )
+                rows = price_table.find_elements(By.TAG_NAME, "tr")
+                prices = []
+                for row in rows[1:]:  # skip header
+                    cells = row.find_elements(By.TAG_NAME, "td")
+                    if len(cells) >= 2:
+                        size_info = cells[0].text.strip()
+                        price_text = cells[1].text.strip()
+                        if price_text and any(c.isdigit() for c in price_text):
+                            prices.append(f"{size_info}: {price_text}")
+                if prices:
+                    driver.quit()
+                    return " | ".join(prices[:3])  # show first 3 sizes/prices
+
+                # Fallback selectors if table ID changed
+                price_elems = driver.find_elements(By.CSS_SELECTOR,
+                    ".price, .listPrice, .yourPrice, [class*='price'], .amount, .currency-value")
+                for elem in price_elems:
+                    txt = elem.text.strip()
+                    if txt and any(c.isdigit() for c in txt):
+                        driver.quit()
+                        return txt
+            except:
+                pass  # continue to full text fallback
+
+        # General fallback: full page text
         text = driver.find_element(By.TAG_NAME, "body").text
         driver.quit()
         return extract_price(text)
     except Exception as e:
-        try:
-            driver.quit()
-        except:
-            pass
-        return f"Selenium failed: {str(e)[:80]}"
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
+        return f"Selenium error: {str(e)[:80]}"
 
 # ---------------- UI ---------------- #
 st.title("Reagent Quote Lookup")
-st.markdown("Search by reagent name, catalog number, or both.\n\n**Note**: Uses Selenium fallback on Render/Railway for better price detection.")
+st.markdown("Search by reagent name, catalog number, or both.\nSelenium fallback enabled for better price detection (Render/Railway).")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -210,13 +237,12 @@ if st.button("Search", type="primary"):
                 product_url = vendor_direct_search(row["Company Name"], search_term)
                 time.sleep(SLEEP_TIME)
 
-                # First try fast requests method
                 data = scrape_product_page(product_url)
 
                 # If price looks missing → try Selenium
                 if "Not found" in data["price"] or "Error" in data["price"] or "Request error" in data["price"]:
                     if SELENIUM_AVAILABLE:
-                        data["price"] = scrape_with_selenium(product_url)
+                        data["price"] = scrape_with_selenium(product_url, row["Company Name"])
                     else:
                         data["price"] += " (Selenium unavailable)"
 
@@ -229,7 +255,7 @@ if st.button("Search", type="primary"):
 
         if results:
             st.subheader("Results from Known Suppliers")
-            st.caption("Prices may require login/cart. Selenium fallback used when available.")
+            st.caption("Sigma-Aldrich: Selenium attempts to expand pricing section and read table")
             st.dataframe(
                 pd.DataFrame(results),
                 column_config={
@@ -239,5 +265,5 @@ if st.button("Search", type="primary"):
                 hide_index=True,
             )
 
-        if not any("Not found" not in r["Price"] and "failed" not in r["Price"].lower() for r in results):
-            st.info("Many prices still hidden (login required or complex JS). Contact suppliers via email for accurate quotes.")
+        if not any("Not found" not in r["Price"] and "error" not in r["Price"].lower() for r in results):
+            st.info("Many prices still not visible (login required, complex dynamic content, or anti-bot protection). Contact suppliers directly via email for quotes.")
