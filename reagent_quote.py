@@ -7,6 +7,17 @@ import re
 import time
 import os
 
+# Selenium imports
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.common.by import By
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    SELENIUM_AVAILABLE = False
+    st.warning("Selenium not installed – falling back to basic scraping (prices may be missed)")
+
 # ---------------- CONFIG ---------------- #
 HEADERS = {
     "User-Agent": (
@@ -45,7 +56,6 @@ def load_data():
         "QIAGEN LLC": "https://www.qiagen.com",
         "STEMCELL Technologies Inc": "https://www.stemcell.com",
         "Zymo Research Corp": "https://www.zymoresearch.com",
-        # Expand as needed
     }
 
     df["Website"] = df["Company Name"].map(websites)
@@ -57,29 +67,23 @@ df = load_data()
 
 # ---------------- HELPERS ---------------- #
 def vendor_direct_search(company_name, search_term):
-    """Prefer direct vendor search URL; fallback to Google"""
     term = quote(search_term.strip())
     company = company_name.lower()
 
     if "thermo fisher" in company or "fisher scientific" in company:
         return f"https://www.thermofisher.com/search/results?query={term}"
-
-    elif "sigma-aldrich" in company or "sial" in company:
+    elif "sigma-aldrich" in company:
         return f"https://www.sigmaaldrich.com/US/en/search/{term}?focus=products&page=1&perpage=30&sort=relevance"
-
     elif "medchemexpress" in company or "mce" in company:
         return f"https://www.medchemexpress.com/search.html?kwd={term}"
-
     elif "abcam" in company:
         return f"https://www.abcam.com/search?keywords={term}"
-
     elif "qiagen" in company:
         return f"https://www.qiagen.com/us/search?query={term}"
-
     elif "stemcell" in company:
         return f"https://www.stemcell.com/search?query={term}"
 
-    # For others → fallback to Google site: search
+    # Fallback: Google site-restricted search
     site = df.loc[df["Company Name"] == company_name, "Website"].values[0]
     query = f'"{search_term}" site:{site}'
     url = f"https://www.google.com/search?q={quote(query)}"
@@ -99,7 +103,6 @@ def vendor_direct_search(company_name, search_term):
     return None
 
 def extract_price(text):
-    """Better regex for various price formats"""
     patterns = [
         r'\$[\s]*[\d,]+(?:\.\d{1,2})?',
         r'USD[\s]*[\d,]+(?:\.\d{1,2})?',
@@ -119,7 +122,7 @@ def extract_email(text):
     return emails[0] if emails else "Not found"
 
 def scrape_product_page(url):
-    if not url:
+    if not url or "Not found" in url:
         return {"price": "No link", "email": "N/A"}
     try:
         r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
@@ -131,11 +134,62 @@ def scrape_product_page(url):
             "email": extract_email(text),
         }
     except Exception as e:
-        return {"price": f"Error: {str(e)[:60]}", "email": "Error"}
+        return {"price": f"Request error: {str(e)[:60]}", "email": "Error"}
+
+def scrape_with_selenium(url):
+    if not SELENIUM_AVAILABLE:
+        return "Selenium not available in this environment"
+
+    if not url or "Not found" in url:
+        return "No valid URL"
+
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    options.binary_location = os.getenv("CHROME_BIN", "/usr/bin/chromium")
+
+    service = Service(os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver"))
+
+    try:
+        driver = webdriver.Chrome(service=service, options=options)
+        driver.get(url)
+        time.sleep(4.5)  # Allow JS to load prices
+
+        # Try specific selectors first
+        price_selectors = [
+            '[data-testid="price"]',
+            '.price', '.product-price', '[class*="price"]',
+            'span.price', 'div.price-amount', '[itemprop="price"]',
+            '.buybox-price', '.price-large', '.price-current',
+        ]
+
+        for sel in price_selectors:
+            try:
+                elem = driver.find_element(By.CSS_SELECTOR, sel)
+                price_text = elem.text.strip()
+                if price_text and any(c.isdigit() for c in price_text):
+                    driver.quit()
+                    return price_text
+            except:
+                continue
+
+        # Fallback: full body text
+        text = driver.find_element(By.TAG_NAME, "body").text
+        driver.quit()
+        return extract_price(text)
+    except Exception as e:
+        try:
+            driver.quit()
+        except:
+            pass
+        return f"Selenium failed: {str(e)[:80]}"
 
 # ---------------- UI ---------------- #
 st.title("Reagent Quote Lookup")
-st.markdown("Search by reagent name, catalog number, or both. Uses direct vendor searches where possible.")
+st.markdown("Search by reagent name, catalog number, or both.\n\n**Note**: Uses Selenium fallback on Render/Railway for better price detection.")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -155,7 +209,17 @@ if st.button("Search", type="primary"):
             for _, row in df.iterrows():
                 product_url = vendor_direct_search(row["Company Name"], search_term)
                 time.sleep(SLEEP_TIME)
+
+                # First try fast requests method
                 data = scrape_product_page(product_url)
+
+                # If price looks missing → try Selenium
+                if "Not found" in data["price"] or "Error" in data["price"] or "Request error" in data["price"]:
+                    if SELENIUM_AVAILABLE:
+                        data["price"] = scrape_with_selenium(product_url)
+                    else:
+                        data["price"] += " (Selenium unavailable)"
+
                 results.append({
                     "Company": row["Company Name"],
                     "Link": product_url or "Not found",
@@ -163,33 +227,9 @@ if st.button("Search", type="primary"):
                     "Price": data["price"],
                 })
 
-            # Optional broad fallback only if almost nothing found
-            broad_results = []
-            if sum(1 for r in results if "Not found" not in r["Link"] and "Error" not in r["Price"]) < 2:
-                broad_query = f'{search_term} buy price'
-                url = f"https://www.google.com/search?q={quote(broad_query)}"
-                try:
-                    r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
-                    soup = BeautifulSoup(r.text, "html.parser")
-                    for div in soup.find_all("div", class_="g"):
-                        a = div.find("a")
-                        if a and "href" in a.attrs and "/url?q=" in a["href"]:
-                            clean = a["href"].split("/url?q=")[1].split("&")[0]
-                            if "google" not in clean.lower():
-                                data = scrape_product_page(clean)
-                                broad_results.append({
-                                    "Company": clean.split("//")[1].split("/")[0],
-                                    "Link": clean,
-                                    "Sales Email": data["email"],
-                                    "Price": data["price"],
-                                })
-                                break
-                except:
-                    pass
-
         if results:
             st.subheader("Results from Known Suppliers")
-            st.caption("Note: Prices often require login/cart/JS. 'Not found' is common — check link or email supplier.")
+            st.caption("Prices may require login/cart. Selenium fallback used when available.")
             st.dataframe(
                 pd.DataFrame(results),
                 column_config={
@@ -199,16 +239,5 @@ if st.button("Search", type="primary"):
                 hide_index=True,
             )
 
-        if broad_results:
-            st.subheader("Additional / Broad Search Results")
-            st.dataframe(
-                pd.DataFrame(broad_results),
-                column_config={
-                    "Link": st.column_config.LinkColumn("Link", display_text="View Page"),
-                },
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        if not any("Not found" not in r["Price"] for r in results):
-            st.info("Most prices not visible (dynamic loading or login required). Try specific catalog numbers or contact suppliers directly via email.")
+        if not any("Not found" not in r["Price"] and "failed" not in r["Price"].lower() for r in results):
+            st.info("Many prices still hidden (login required or complex JS). Contact suppliers via email for accurate quotes.")
