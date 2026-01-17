@@ -20,8 +20,10 @@ REQUEST_TIMEOUT = 10
 SLEEP_TIME = 1
 
 # ---------------- LOAD DATA ---------------- #
+FILENAME = "Company.xlsx"
+
 df = pd.read_excel(
-    "Company.xlsx",
+    FILENAME,
     sheet_name="Sheet1"
 )
 
@@ -142,6 +144,7 @@ def index():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
 
 
 
