@@ -7,7 +7,7 @@ import re
 import time
 import os
 
-# Selenium imports
+# Selenium imports (for fallback)
 try:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
@@ -59,6 +59,8 @@ def load_data():
         "QIAGEN LLC": "https://www.qiagen.com",
         "STEMCELL Technologies Inc": "https://www.stemcell.com",
         "Zymo Research Corp": "https://www.zymoresearch.com",
+        "VWR International LLC": "https://www.avantorsciences.com/us/en",  # Added Avantor/VWR
+        # Add more if needed
     }
 
     df["Website"] = df["Company Name"].map(websites)
@@ -85,8 +87,11 @@ def vendor_direct_search(company_name, search_term):
         return f"https://www.qiagen.com/us/search?query={term}"
     elif "stemcell" in company_lower:
         return f"https://www.stemcell.com/search?query={term}"
+    elif "vwr" in company_lower or "avantor" in company_lower:
+        # Avantor/VWR search endpoint (US English site)
+        return f"https://www.avantorsciences.com/us/en/search?text={term}"
 
-    # Google fallback
+    # Google fallback for others
     site = df.loc[df["Company Name"] == company_name, "Website"].values[0]
     query = f'"{search_term}" site:{site}'
     url = f"https://www.google.com/search?q={quote(query)}"
@@ -164,23 +169,21 @@ def scrape_with_selenium(url, company_name):
 
         company_lower = company_name.lower()
 
-        # Sigma-Aldrich specific handling
+        # Sigma-Aldrich specific (as before)
         if "sigma-aldrich" in company_lower:
             try:
-                # Try to expand pricing section
                 expand_button = WebDriverWait(driver, SELENIUM_WAIT_SEC).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, ".expandArrow, [aria-label*='expand'], .pricing-toggle"))
                 )
                 expand_button.click()
                 time.sleep(2.5)
 
-                # Try common Sigma price table
                 price_table = WebDriverWait(driver, 5).until(
                     EC.presence_of_element_located((By.ID, "productSizePriceQtyTable"))
                 )
                 rows = price_table.find_elements(By.TAG_NAME, "tr")
                 prices = []
-                for row in rows[1:]:  # skip header
+                for row in rows[1:]:
                     cells = row.find_elements(By.TAG_NAME, "td")
                     if len(cells) >= 2:
                         size_info = cells[0].text.strip()
@@ -189,20 +192,11 @@ def scrape_with_selenium(url, company_name):
                             prices.append(f"{size_info}: {price_text}")
                 if prices:
                     driver.quit()
-                    return " | ".join(prices[:3])  # show first 3 sizes/prices
-
-                # Fallback selectors if table ID changed
-                price_elems = driver.find_elements(By.CSS_SELECTOR,
-                    ".price, .listPrice, .yourPrice, [class*='price'], .amount, .currency-value")
-                for elem in price_elems:
-                    txt = elem.text.strip()
-                    if txt and any(c.isdigit() for c in txt):
-                        driver.quit()
-                        return txt
+                    return " | ".join(prices[:3])
             except:
-                pass  # continue to full text fallback
+                pass
 
-        # General fallback: full page text
+        # General fallback
         text = driver.find_element(By.TAG_NAME, "body").text
         driver.quit()
         return extract_price(text)
@@ -239,7 +233,6 @@ if st.button("Search", type="primary"):
 
                 data = scrape_product_page(product_url)
 
-                # If price looks missing → try Selenium
                 if "Not found" in data["price"] or "Error" in data["price"] or "Request error" in data["price"]:
                     if SELENIUM_AVAILABLE:
                         data["price"] = scrape_with_selenium(product_url, row["Company Name"])
@@ -255,7 +248,7 @@ if st.button("Search", type="primary"):
 
         if results:
             st.subheader("Results from Known Suppliers")
-            st.caption("Sigma-Aldrich: Selenium attempts to expand pricing section and read table")
+            st.caption("Includes Avantor/VWR search. Prices may require login/cart.")
             st.dataframe(
                 pd.DataFrame(results),
                 column_config={
@@ -266,4 +259,4 @@ if st.button("Search", type="primary"):
             )
 
         if not any("Not found" not in r["Price"] and "error" not in r["Price"].lower() for r in results):
-            st.info("Many prices still not visible (login required, complex dynamic content, or anti-bot protection). Contact suppliers directly via email for quotes.")
+            st.info("Many prices still hidden (login, complex JS, or anti-bot). Contact suppliers via email for accurate quotes.")
