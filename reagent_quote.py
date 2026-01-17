@@ -126,7 +126,7 @@ def vendor_direct_search(company_name: str, search_term: str) -> str | None:
 
     # Avantor / VWR
     elif any(kw in company_lower for kw in ["vwr", "avantor"]):
-        return f"https://www.avantorsciences.com/us/en/search?text={term}"
+        return f"https://www.avantorsciences.com/us/en/search/{term}"
 
     # Addgene
     elif "addgene" in company_lower:
@@ -319,3 +319,4 @@ if st.button("Search", type="primary"):
             st.info("No direct product pages found. Try a more specific catalog number, or contact suppliers via email for quotes.")
 
         st.info("Note: Many suppliers require login or quote requests for exact pricing. Use the provided emails/links for follow-up.")
+
