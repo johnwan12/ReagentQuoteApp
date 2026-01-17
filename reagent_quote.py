@@ -7,7 +7,7 @@ import re
 import time
 import os
 
-# Selenium imports (for fallback)
+# Selenium imports (fallback for dynamic prices)
 try:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
@@ -59,8 +59,7 @@ def load_data():
         "QIAGEN LLC": "https://www.qiagen.com",
         "STEMCELL Technologies Inc": "https://www.stemcell.com",
         "Zymo Research Corp": "https://www.zymoresearch.com",
-        "VWR International LLC": "https://www.avantorsciences.com/us/en",  # Added Avantor/VWR
-        # Add more if needed
+        "VWR International LLC": "https://www.avantorsciences.com/us/en",
     }
 
     df["Website"] = df["Company Name"].map(websites)
@@ -88,10 +87,9 @@ def vendor_direct_search(company_name, search_term):
     elif "stemcell" in company_lower:
         return f"https://www.stemcell.com/search?query={term}"
     elif "vwr" in company_lower or "avantor" in company_lower:
-        # Avantor/VWR search endpoint (US English site)
         return f"https://www.avantorsciences.com/us/en/search?text={term}"
 
-    # Google fallback for others
+    # Google site-restricted fallback
     site = df.loc[df["Company Name"] == company_name, "Website"].values[0]
     query = f'"{search_term}" site:{site}'
     url = f"https://www.google.com/search?q={quote(query)}"
@@ -169,7 +167,7 @@ def scrape_with_selenium(url, company_name):
 
         company_lower = company_name.lower()
 
-        # Sigma-Aldrich specific (as before)
+        # Sigma-Aldrich specific handling
         if "sigma-aldrich" in company_lower:
             try:
                 expand_button = WebDriverWait(driver, SELENIUM_WAIT_SEC).until(
@@ -210,7 +208,7 @@ def scrape_with_selenium(url, company_name):
 
 # ---------------- UI ---------------- #
 st.title("Reagent Quote Lookup")
-st.markdown("Search by reagent name, catalog number, or both.\nSelenium fallback enabled for better price detection (Render/Railway).")
+st.markdown("Search by reagent name, catalog number, or both.\nOnly suppliers with product links are shown.")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -227,6 +225,8 @@ if st.button("Search", type="primary"):
 
         with st.spinner(f"Searching suppliers for: {search_term} ..."):
             results = []
+            no_results_companies = []  # Optional: track companies with no hit
+
             for _, row in df.iterrows():
                 product_url = vendor_direct_search(row["Company Name"], search_term)
                 time.sleep(SLEEP_TIME)
@@ -239,16 +239,19 @@ if st.button("Search", type="primary"):
                     else:
                         data["price"] += " (Selenium unavailable)"
 
-                results.append({
-                    "Company": row["Company Name"],
-                    "Link": product_url or "Not found",
-                    "Sales Email": row["Email Address"],
-                    "Price": data["price"],
-                })
+                # Only include if we found a product page
+                if product_url and "Not found" not in product_url:
+                    results.append({
+                        "Company": row["Company Name"],
+                        "Link": product_url,
+                        "Sales Email": row["Email Address"],
+                        "Price": data["price"],
+                    })
+                else:
+                    no_results_companies.append(row["Company Name"])
 
         if results:
-            st.subheader("Results from Known Suppliers")
-            st.caption("Includes Avantor/VWR search. Prices may require login/cart.")
+            st.subheader("Suppliers with Matching Products")
             st.dataframe(
                 pd.DataFrame(results),
                 column_config={
@@ -257,6 +260,13 @@ if st.button("Search", type="primary"):
                 use_container_width=True,
                 hide_index=True,
             )
+        else:
+            st.info("No product pages found across suppliers. Try a more specific catalog number or different spelling.")
 
-        if not any("Not found" not in r["Price"] and "error" not in r["Price"].lower() for r in results):
-            st.info("Many prices still hidden (login, complex JS, or anti-bot). Contact suppliers via email for accurate quotes.")
+        # Optional: show summary of checked suppliers
+        if no_results_companies:
+            with st.expander("Checked but no product found"):
+                st.write(", ".join(no_results_companies))
+
+        if not results:
+            st.info("Many reagents require login or quote request. Contact suppliers directly via email for accurate pricing.")
