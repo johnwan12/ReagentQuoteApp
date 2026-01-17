@@ -49,6 +49,7 @@ def load_data():
 
     websites = {
         "Thermo Fisher Life Technologies": "https://www.thermofisher.com",
+        "Google": "https://www.google.com",
         "Fisher Scientific": "https://www.fishersci.com",
         "MCE (MedChemExpress LLC)": "https://www.medchemexpress.com",
         "Sigma-Aldrich Inc": "https://www.sigmaaldrich.com/US/en",
@@ -108,6 +109,9 @@ def vendor_direct_search(company_name: str, search_term: str) -> str | None:
 
     elif "abcam" in company_lower:
         return f"https://www.abcam.com/search?keywords={term}"
+        
+    elif "google" in company_lower:
+        return f"https://www.google.com/search?keywords={term}"
 
     elif "qiagen" in company_lower:
         return f"https://www.qiagen.com/us/search?query={term}"
@@ -257,3 +261,4 @@ if st.button("Search Suppliers", type="primary"):
                 st.write(", ".join(skipped))
 
         st.info("Tip: Catalog numbers usually give more precise results than names alone.")
+
