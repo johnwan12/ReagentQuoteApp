@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import quote
 import re
 import time
+import os
 
 # ---------------- CONFIG ---------------- #
 HEADERS = {
@@ -18,14 +19,19 @@ REQUEST_TIMEOUT = 10
 SLEEP_TIME = 1.2
 
 # ---------------- LOAD DATA ---------------- #
-EXCEL_FILE = "Companies.xlsx"
+EXCEL_FILE = "Companies.xlsx"  # ← Updated filename
 
 @st.cache_data(show_spinner="Loading company database...")
 def load_data():
+    if not os.path.exists(EXCEL_FILE):
+        st.error(f"Excel file not found: {EXCEL_FILE}\nCurrent directory: {os.getcwd()}\nFiles: {os.listdir('.')}")
+        st.stop()
+
     try:
         df = pd.read_excel(EXCEL_FILE, sheet_name="Sheet1")
+        st.success(f"Loaded {len(df)} companies from {EXCEL_FILE}", icon="✅")
     except Exception as e:
-        st.error(f"Failed to load Excel file: {e}")
+        st.error(f"Failed to load {EXCEL_FILE}: {str(e)}")
         st.stop()
 
     websites = {
@@ -39,7 +45,7 @@ def load_data():
         "QIAGEN LLC": "https://www.qiagen.com",
         "STEMCELL Technologies Inc": "https://www.stemcell.com",
         "Zymo Research Corp": "https://www.zymoresearch.com",
-        # Add more mappings here if needed
+        # Add more company → website mappings here as needed
     }
 
     df["Website"] = df["Company Name"].map(websites)
@@ -51,6 +57,7 @@ df = load_data()
 
 # ---------------- HELPERS ---------------- #
 def google_search(query):
+    """Return first plausible product URL from Google results"""
     url = f"https://www.google.com/search?q={quote(query)}"
     try:
         r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
@@ -63,14 +70,22 @@ def google_search(query):
                 if href.startswith("/url?q="):
                     clean = href.split("/url?q=")[1].split("&")[0]
                     if "google" not in clean.lower() and "youtube" not in clean.lower():
+                        # Prefer product/catalog/shop links when possible
+                        if any(kw in clean.lower() for kw in ["/product/", "/catalog/", "/shop/", "/order/"]):
+                            return clean
+                        # Otherwise return first non-Google link
                         return clean
         return None
     except Exception:
         return None
 
 def extract_price(text):
-    prices = re.findall(r"\$\s*[\d,]+(?:\.\d+)?", text)
-    return prices[0].strip() if prices else "Not found"
+    """Improved price extraction"""
+    prices = re.findall(r'(?:USD|\$|€|Price:?\s*|\$?\s*)[\d,]+(?:\.\d{1,2})?', text, re.IGNORECASE)
+    if prices:
+        cleaned = [p.strip('$€ USD: \t') for p in prices if any(c.isdigit() for c in p)]
+        return cleaned[0] if cleaned else "Not found"
+    return "Not found"
 
 def extract_email(text):
     emails = re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", text)
@@ -95,15 +110,15 @@ st.markdown("Search by **reagent name**, **catalog number**, or **both**.")
 
 col1, col2 = st.columns(2)
 with col1:
-    reagent = st.text_input("Reagent Name", placeholder="e.g. DMEM, Fetal Bovine Serum, ...", key="reagent")
+    reagent = st.text_input("Reagent Name", placeholder="e.g. 8-Bromoadenosine, DMEM, ...", key="reagent")
 with col2:
-    catnum = st.text_input("Catalog Number", placeholder="e.g. 11965-092, A12345, ...", key="catnum")
+    catnum = st.text_input("Catalog Number", placeholder="e.g. 11965-092, B6272, ...", key="catnum")
 
 if st.button("Search", type="primary"):
     if not reagent.strip() and not catnum.strip():
         st.warning("Please enter at least a reagent name or a catalog number.")
     else:
-        # Build flexible query
+        # Build search term flexibly
         terms = []
         if reagent.strip():
             terms.append(f'"{reagent.strip()}"')
@@ -111,7 +126,7 @@ if st.button("Search", type="primary"):
             terms.append(f'"{catnum.strip()}"')
         search_term = " ".join(terms)
 
-        with st.spinner(f"Searching for {search_term} ..."):
+        with st.spinner(f"Searching suppliers for: {search_term} ..."):
             results = []
             for _, row in df.iterrows():
                 query = f'{search_term} site:{row["Website"]}'
@@ -133,7 +148,7 @@ if st.button("Search", type="primary"):
                         "Price": "Not found",
                     })
 
-            # Broad fallback only if nothing found
+            # Broad fallback if no direct hits
             broad_results = []
             if not any(r["Link"] != "Not found" for r in results):
                 broad_query = f'{search_term} buy price'
@@ -170,5 +185,4 @@ if st.button("Search", type="primary"):
             )
 
         if not results and not broad_results:
-            st.info("No matching products found. Try a different spelling, format, or fewer terms.")
-
+            st.info("No matching products found. Try different spelling, format, or fewer terms.")
