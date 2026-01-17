@@ -18,7 +18,7 @@ REQUEST_TIMEOUT = 10
 SLEEP_TIME = 1.2
 
 # ---------------- LOAD DATA ---------------- #
-EXCEL_FILE = "Companies.xlsx"  # ← use exact name from your directory
+EXCEL_FILE = "Company name, email address and phone number.xlsx"
 
 @st.cache_data(show_spinner="Loading company database...")
 def load_data():
@@ -39,7 +39,7 @@ def load_data():
         "QIAGEN LLC": "https://www.qiagen.com",
         "STEMCELL Technologies Inc": "https://www.stemcell.com",
         "Zymo Research Corp": "https://www.zymoresearch.com",
-        # ← add more if needed
+        # Add more mappings here if needed
     }
 
     df["Website"] = df["Company Name"].map(websites)
@@ -51,7 +51,6 @@ df = load_data()
 
 # ---------------- HELPERS ---------------- #
 def google_search(query):
-    """Return first valid product-like URL from Google search results"""
     url = f"https://www.google.com/search?q={quote(query)}"
     try:
         r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
@@ -92,22 +91,30 @@ def scrape_product_page(url):
 
 # ---------------- UI ---------------- #
 st.title("Reagent Quote Lookup")
-st.markdown("Enter a reagent name and catalog number to search prices across suppliers.")
+st.markdown("Search by **reagent name**, **catalog number**, or **both**.")
 
 col1, col2 = st.columns(2)
 with col1:
-    reagent = st.text_input("Reagent Name", placeholder="e.g. DMEM")
+    reagent = st.text_input("Reagent Name", placeholder="e.g. DMEM, Fetal Bovine Serum, ...", key="reagent")
 with col2:
-    catnum = st.text_input("Catalog Number", placeholder="e.g. 11965-092")
+    catnum = st.text_input("Catalog Number", placeholder="e.g. 11965-092, A12345, ...", key="catnum")
 
 if st.button("Search", type="primary"):
-    if not reagent.strip() or not catnum.strip():
-        st.warning("Please enter both reagent name and catalog number.")
+    if not reagent.strip() and not catnum.strip():
+        st.warning("Please enter at least a reagent name or a catalog number.")
     else:
-        with st.spinner(f"Searching for {reagent} {catnum} ..."):
+        # Build flexible query
+        terms = []
+        if reagent.strip():
+            terms.append(f'"{reagent.strip()}"')
+        if catnum.strip():
+            terms.append(f'"{catnum.strip()}"')
+        search_term = " ".join(terms)
+
+        with st.spinner(f"Searching for {search_term} ..."):
             results = []
             for _, row in df.iterrows():
-                query = f'"{reagent} {catnum}" site:{row["Website"]}'
+                query = f'{search_term} site:{row["Website"]}'
                 product_url = google_search(query)
                 time.sleep(SLEEP_TIME)
                 if product_url:
@@ -126,10 +133,10 @@ if st.button("Search", type="primary"):
                         "Price": "Not found",
                     })
 
-            # Broad fallback
+            # Broad fallback only if nothing found
             broad_results = []
             if not any(r["Link"] != "Not found" for r in results):
-                broad_query = f'"{reagent} {catnum}" buy price'
+                broad_query = f'{search_term} buy price'
                 url = google_search(broad_query)
                 if url:
                     data = scrape_product_page(url)
@@ -148,6 +155,7 @@ if st.button("Search", type="primary"):
                     "Link": st.column_config.LinkColumn("Link", display_text="View Product"),
                 },
                 use_container_width=True,
+                hide_index=True,
             )
 
         if broad_results:
@@ -158,8 +166,8 @@ if st.button("Search", type="primary"):
                     "Link": st.column_config.LinkColumn("Link", display_text="View Product"),
                 },
                 use_container_width=True,
+                hide_index=True,
             )
 
         if not results and not broad_results:
-            st.info("No results found. Try different spelling or catalog format.")
-
+            st.info("No matching products found. Try a different spelling, format, or fewer terms.")
