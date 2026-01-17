@@ -58,7 +58,7 @@ def load_data():
         "QIAGEN LLC": "https://www.qiagen.com/us",
         "STEMCELL Technologies Inc": "https://www.stemcell.com",
         "Zymo Research Corp": "https://www.zymoresearch.com",
-        "VWR International LLC": "https://www.avantorsciences.com/us/en/search/",
+        "VWR International LLC": "https://www.avantorsciences.com/us/en/",
         "Alkali Scientific LLC": "https://alkalisci.com/",
         "Baker Company": "https://bakerco.com/",
         "BioLegend Inc": "https://www.biolegend.com/",
@@ -126,7 +126,7 @@ def vendor_direct_search(company_name: str, search_term: str) -> str | None:
 
     # Avantor / VWR
     elif any(kw in company_lower for kw in ["vwr", "avantor"]):
-        return f"https://www.avantorsciences.com/us/en/search/{term}"
+        return f"https://www.avantorsciences.com/us/en/search?query={term}"
 
     # Addgene
     elif "addgene" in company_lower:
@@ -319,5 +319,6 @@ if st.button("Search", type="primary"):
             st.info("No direct product pages found. Try a more specific catalog number, or contact suppliers via email for quotes.")
 
         st.info("Note: Many suppliers require login or quote requests for exact pricing. Use the provided emails/links for follow-up.")
+
 
 
