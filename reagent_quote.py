@@ -20,12 +20,7 @@ REQUEST_TIMEOUT = 10
 SLEEP_TIME = 1
 
 # ---------------- LOAD DATA ---------------- #
-FILENAME = "Company.xlsx"
-
-df = pd.read_excel(
-    FILENAME,
-    sheet_name="Sheet1"
-)
+df = pd.read_csv("companies.csv")
 
 websites = {
     "Thermo Fisher Life Technologies": "https://www.thermofisher.com",
@@ -144,6 +139,7 @@ def index():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
 
 
 
