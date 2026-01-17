@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<body>
+<h2>Results from Listed Companies</h2>
+<table border="1">
+    <tr><th>Company</th><th>Purchasing Link</th><th>Sales Email</th><th>Price</th></tr>
+    {% for r in results %}
+    <tr>
+        <td>{{ r.company }}</td>
+        <td><a href="{{ r.link }}" target="_blank">{{ r.link }}</a></td>
+        <td>{{ r.email }}</td>
+        <td>{{ r.price }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% if broad_results %}
+<h2>Broadened Search Results</h2>
+<table border="1">
+    <tr><th>Company/Domain</th><th>Purchasing Link</th><th>Sales Email</th><th>Price</th></tr>
+    {% for br in broad_results %}
+    <tr>
+        <td>{{ br.company }}</td>
+        <td><a href="{{ br.link }}" target="_blank">{{ br.link }}</a></td>
+        <td>{{ br.email }}</td>
+        <td>{{ br.price }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+</body>
+</html>
