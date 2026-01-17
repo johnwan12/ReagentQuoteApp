@@ -52,14 +52,40 @@ def load_data():
         "Thermo Fisher Life Technologies": "https://www.thermofisher.com",
         "Fisher Scientific": "https://www.fishersci.com",
         "MCE (MedChemExpress LLC)": "https://www.medchemexpress.com",
-        "Sigma-Aldrich Inc": "https://www.sigmaaldrich.com",
-        "Abcam Inc": "https://www.abcam.com",
+        "Sigma-Aldrich Inc": "https://www.sigmaaldrich.com/US/en",
+        "Abcam Inc": "https://www.abcam.com/en-us",
         "Addgene Inc": "https://www.addgene.org",
         "Bio-Rad Laboratories Inc": "https://www.bio-rad.com",
-        "QIAGEN LLC": "https://www.qiagen.com",
+        "QIAGEN LLC": "https://www.qiagen.com/us",
         "STEMCELL Technologies Inc": "https://www.stemcell.com",
         "Zymo Research Corp": "https://www.zymoresearch.com",
         "VWR International LLC": "https://www.avantorsciences.com/us/en",
+        "Alkali Scientific LLC": "https://alkalisci.com/",
+        "Baker Company": "https://bakerco.com/",
+        "BioLegend Inc": "https://www.biolegend.com/de-de/bio-bits/welcome-back-to-the-lab",
+        "Cayman Chemical Company Inc": "https://www.caymanchem.com/",
+        "Cell Signaling Technology": "https://www.cellsignal.com/",
+        "Cerillo, Inc.": "https://cerillo.bio/",
+        "Cole-Parmer": "https://www.coleparmer.com/",
+        "Corning Incorporated": "https://www.coriell.org/",
+        "Creative Biogene": "https://microbiosci.creative-biogene.com/",
+        "Creative Biolabs Inc": "https://www.creative-biolabs.com/",
+        "Eurofins Genomics LLC": "https://www.eurofinsdiscovery.com/",
+        "Genesee Scientific LLC": "hhttps://www.geneseesci.com/",
+        "Integrated DNA Technologies Inc": "https://www.idtdna.com/page",
+        "InvivoGen": "https://www.invivogen.com/",
+        "LI-COR Biotech LLC": "https://www.licorbio.com/",
+        "Omega Bio-tek Inc": "https://omegabiotek.com/",
+        "PEPperPRINT GmbH": "https://www.pepperprint.com/",
+        "Pipette.com": "https://pipette.com/",
+        "Santa Cruz Biotechnology": "https://www.scbt.com/home",
+        "RWD Life Science Inc": "https://www.rwdstco.com/company-profile/",
+        "IBL-America": "https://www.ibl-america.com/",
+        "invivogen": "https://www.invivogen.com/",
+        "Thomas Scientific INC": "https://www.thomassci.com/",
+        "INVENT BIOTECHNOLOGIES INC": "https://inventbiotech.com/",
+        "NEW ENGLAND BIOLABS INC": "https://www.neb.com/en-us"
+        
     }
 
     df["Website"] = df["Company Name"].map(websites)
@@ -270,3 +296,4 @@ if st.button("Search", type="primary"):
 
         if not results:
             st.info("Many reagents require login or quote request. Contact suppliers directly via email for accurate pricing.")
+
