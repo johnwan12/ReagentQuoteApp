@@ -18,7 +18,7 @@ REQUEST_TIMEOUT = 10
 SLEEP_TIME = 1.2
 
 # ---------------- LOAD DATA ---------------- #
-EXCEL_FILE = "Company name, email address and phone number.xlsx"  # ← use exact name from your directory
+EXCEL_FILE = "Companies.xlsx"  # ← use exact name from your directory
 
 @st.cache_data(show_spinner="Loading company database...")
 def load_data():
@@ -162,3 +162,4 @@ if st.button("Search", type="primary"):
 
         if not results and not broad_results:
             st.info("No results found. Try different spelling or catalog format.")
+
