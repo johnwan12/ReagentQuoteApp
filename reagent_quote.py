@@ -1,12 +1,10 @@
-from flask import Flask, request, render_template
+import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import quote
 import re
 import time
-
-app = Flask(__name__)
 
 # ---------------- CONFIG ---------------- #
 HEADERS = {
@@ -17,130 +15,150 @@ HEADERS = {
     )
 }
 REQUEST_TIMEOUT = 10
-SLEEP_TIME = 1
+SLEEP_TIME = 1.2
 
 # ---------------- LOAD DATA ---------------- #
-df = pd.read_csv("companies.csv")
+EXCEL_FILE = "Company name, email address and phone number.xlsx"  # ← use exact name from your directory
 
-websites = {
-    "Thermo Fisher Life Technologies": "https://www.thermofisher.com",
-    "Fisher Scientific": "https://www.fishersci.com",
-    "Sigma-Aldrich Inc": "https://www.sigmaaldrich.com",
-    "Abcam Inc": "https://www.abcam.com",
-    "Addgene Inc": "https://www.addgene.org",
-    "Bio-Rad Laboratories Inc": "https://www.bio-rad.com",
-    "QIAGEN LLC": "https://www.qiagen.com",
-    "STEMCELL Technologies Inc": "https://www.stemcell.com",
-    "Zymo Research Corp": "https://www.zymoresearch.com",
-}
+@st.cache_data(show_spinner="Loading company database...")
+def load_data():
+    try:
+        df = pd.read_excel(EXCEL_FILE, sheet_name="Sheet1")
+    except Exception as e:
+        st.error(f"Failed to load Excel file: {e}")
+        st.stop()
 
-df["Website"] = df["Company Name"].map(websites)
-df = df.dropna(subset=["Website"]).drop_duplicates("Company Name")
-df["Email Address"] = df["Email Address"].fillna("Not provided")
+    websites = {
+        "Thermo Fisher Life Technologies": "https://www.thermofisher.com",
+        "Fisher Scientific": "https://www.fishersci.com",
+        "MCE (MedChemExpress LLC)": "https://www.medchemexpress.com",
+        "Sigma-Aldrich Inc": "https://www.sigmaaldrich.com",
+        "Abcam Inc": "https://www.abcam.com",
+        "Addgene Inc": "https://www.addgene.org",
+        "Bio-Rad Laboratories Inc": "https://www.bio-rad.com",
+        "QIAGEN LLC": "https://www.qiagen.com",
+        "STEMCELL Technologies Inc": "https://www.stemcell.com",
+        "Zymo Research Corp": "https://www.zymoresearch.com",
+        # ← add more if needed
+    }
+
+    df["Website"] = df["Company Name"].map(websites)
+    df = df.dropna(subset=["Website"]).drop_duplicates("Company Name")
+    df["Email Address"] = df["Email Address"].fillna("Not provided")
+    return df
+
+df = load_data()
 
 # ---------------- HELPERS ---------------- #
 def google_search(query):
-    """Return first valid non-Google URL from search results"""
+    """Return first valid product-like URL from Google search results"""
     url = f"https://www.google.com/search?q={quote(query)}"
-    r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
-    soup = BeautifulSoup(r.text, "html.parser")
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        for div in soup.find_all("div", class_="g"):
+            a = div.find("a")
+            if a and "href" in a.attrs:
+                href = a["href"]
+                if href.startswith("/url?q="):
+                    clean = href.split("/url?q=")[1].split("&")[0]
+                    if "google" not in clean.lower() and "youtube" not in clean.lower():
+                        return clean
+        return None
+    except Exception:
+        return None
 
-    for link in soup.select("a"):
-        href = link.get("href", "")
-        if href.startswith("/url?q="):
-            clean_url = href.split("/url?q=")[1].split("&")[0]
-            if "google" not in clean_url.lower():
-                return clean_url
-    return None
+def extract_price(text):
+    prices = re.findall(r"\$\s*[\d,]+(?:\.\d+)?", text)
+    return prices[0].strip() if prices else "Not found"
 
-
-def extract_price(html_text):
-    """Extract first USD price found"""
-    prices = re.findall(r"\$\s*\d+(?:,\d{3})*(?:\.\d+)?", html_text)
-    return prices[0] if prices else "Not found"
-
-
-def extract_email(html_text):
-    emails = re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", html_text)
+def extract_email(text):
+    emails = re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", text)
     return emails[0] if emails else "Not found"
 
-
 def scrape_product_page(url):
-    r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
-    soup = BeautifulSoup(r.text, "html.parser")
-    text = soup.get_text(" ", strip=True)
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        text = soup.get_text(" ", strip=True)
+        return {
+            "price": extract_price(text),
+            "email": extract_email(text),
+        }
+    except Exception:
+        return {"price": "Error", "email": "Error"}
 
-    return {
-        "price": extract_price(text),
-        "email": extract_email(text),
-    }
+# ---------------- UI ---------------- #
+st.title("Reagent Quote Lookup")
+st.markdown("Enter a reagent name and catalog number to search prices across suppliers.")
 
+col1, col2 = st.columns(2)
+with col1:
+    reagent = st.text_input("Reagent Name", placeholder="e.g. DMEM")
+with col2:
+    catnum = st.text_input("Catalog Number", placeholder="e.g. 11965-092")
 
-# ---------------- ROUTES ---------------- #
-@app.route("/", methods=["GET", "POST"])
-def index():
-    if request.method == "POST":
-        reagent = request.form["reagent"]
-        catnum = request.form["catnum"]
-
-        results = []
-
-        for _, row in df.iterrows():
-            query = f'"{reagent} {catnum}" site:{row["Website"]}'
-            try:
+if st.button("Search", type="primary"):
+    if not reagent.strip() or not catnum.strip():
+        st.warning("Please enter both reagent name and catalog number.")
+    else:
+        with st.spinner(f"Searching for {reagent} {catnum} ..."):
+            results = []
+            for _, row in df.iterrows():
+                query = f'"{reagent} {catnum}" site:{row["Website"]}'
                 product_url = google_search(query)
                 time.sleep(SLEEP_TIME)
+                if product_url:
+                    data = scrape_product_page(product_url)
+                    results.append({
+                        "Company": row["Company Name"],
+                        "Link": product_url,
+                        "Sales Email": row["Email Address"],
+                        "Price": data["price"],
+                    })
+                else:
+                    results.append({
+                        "Company": row["Company Name"],
+                        "Link": "Not found",
+                        "Sales Email": row["Email Address"],
+                        "Price": "Not found",
+                    })
 
-                if not product_url:
-                    raise ValueError("No product link found")
-
-                data = scrape_product_page(product_url)
-
-                results.append({
-                    "company": row["Company Name"],
-                    "link": product_url,
-                    "email": row["Email Address"],
-                    "price": data["price"],
-                })
-
-            except Exception as e:
-                results.append({
-                    "company": row["Company Name"],
-                    "link": "Not found",
-                    "email": row["Email Address"],
-                    "price": "Not found",
-                })
-
-        # Broad fallback search
-        broad_results = []
-        if not any(r["link"] != "Not found" for r in results):
-            broad_query = f'"{reagent} {catnum}" buy price'
-            try:
+            # Broad fallback
+            broad_results = []
+            if not any(r["Link"] != "Not found" for r in results):
+                broad_query = f'"{reagent} {catnum}" buy price'
                 url = google_search(broad_query)
                 if url:
                     data = scrape_product_page(url)
                     broad_results.append({
-                        "company": url.split("//")[1].split("/")[0],
-                        "link": url,
-                        "email": data["email"],
-                        "price": data["price"],
+                        "Company": url.split("//")[1].split("/")[0],
+                        "Link": url,
+                        "Sales Email": data["email"],
+                        "Price": data["price"],
                     })
-            except Exception:
-                pass
 
-        return render_template(
-            "results.html",
-            results=results,
-            broad_results=broad_results,
-        )
+        if results:
+            st.subheader("Results from Known Suppliers")
+            st.dataframe(
+                pd.DataFrame(results),
+                column_config={
+                    "Link": st.column_config.LinkColumn("Link", display_text="View Product"),
+                },
+                use_container_width=True,
+            )
 
-    return render_template("form.html")
+        if broad_results:
+            st.subheader("Additional Results (Broad Search)")
+            st.dataframe(
+                pd.DataFrame(broad_results),
+                column_config={
+                    "Link": st.column_config.LinkColumn("Link", display_text="View Product"),
+                },
+                use_container_width=True,
+            )
 
-
-if __name__ == "__main__":
-    app.run(debug=True)
-
-
-
-
-
+        if not results and not broad_results:
+            st.info("No results found. Try different spelling or catalog format.")
