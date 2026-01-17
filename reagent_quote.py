@@ -58,7 +58,7 @@ def load_data():
         "QIAGEN LLC": "https://www.qiagen.com/us",
         "STEMCELL Technologies Inc": "https://www.stemcell.com",
         "Zymo Research Corp": "https://www.zymoresearch.com",
-        "VWR International LLC": "https://www.avantorsciences.com/us/en",
+        "VWR International LLC": "https://www.avantorsciences.com/us/en/search/",
         "Alkali Scientific LLC": "https://alkalisci.com/",
         "Baker Company": "https://bakerco.com/",
         "BioLegend Inc": "https://www.biolegend.com/",
@@ -319,4 +319,5 @@ if st.button("Search", type="primary"):
             st.info("No direct product pages found. Try a more specific catalog number, or contact suppliers via email for quotes.")
 
         st.info("Note: Many suppliers require login or quote requests for exact pricing. Use the provided emails/links for follow-up.")
+
 
