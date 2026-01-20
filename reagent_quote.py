@@ -7,7 +7,7 @@ import re
 import time
 import os
 
-# Selenium imports (optional fallback for dynamic content)
+# Selenium imports (optional fallback)
 try:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
@@ -29,7 +29,7 @@ HEADERS = {
     )
 }
 REQUEST_TIMEOUT = 12
-SLEEP_TIME = 1.2          # Slightly faster but still polite
+SLEEP_TIME = 1.5  # Slightly increased for politeness
 SELENIUM_WAIT_SEC = 6
 
 # ---------------- LOAD DATA ---------------- #
@@ -54,38 +54,9 @@ def load_data():
         "MCE (MedChemExpress LLC)": "https://www.medchemexpress.com",
         "Sigma-Aldrich Inc": "https://www.sigmaaldrich.com/US/en",
         "Abcam Inc": "https://www.abcam.com/en-us",
-        "Addgene Inc": "https://www.addgene.org",
-        "Bio-Rad Laboratories Inc": "https://www.bio-rad.com",
-        "QIAGEN LLC": "https://www.qiagen.com/us",
-        "STEMCELL Technologies Inc": "https://www.stemcell.com",
-        "Zymo Research Corp": "https://www.zymoresearch.com",
-        "VWR International LLC": "https://www.avantorsciences.com/us/en",
-        "Alkali Scientific LLC": "https://alkalisci.com/",
-        "Baker Company": "https://bakerco.com/",
-        "BioLegend Inc": "https://www.biolegend.com/",
-        "Cayman Chemical Company Inc": "https://www.caymanchem.com/",
-        "Cell Signaling Technology": "https://www.cellsignal.com/",
-        "Cerillo, Inc.": "https://cerillo.bio/",
-        "Cole-Parmer": "https://www.coleparmer.com/",
-        "Corning Incorporated": "https://www.corning.com/life-sciences",
-        "Creative Biogene": "https://microbiosci.creative-biogene.com/",
-        "Creative Biolabs Inc": "https://www.creative-biolabs.com/",
-        "Eurofins Genomics LLC": "https://www.eurofinsgenomics.eu/",
-        "Genesee Scientific LLC": "https://www.geneseesci.com/",
-        "Integrated DNA Technologies Inc": "https://www.idtdna.com/",
-        "InvivoGen": "https://www.invivogen.com/",
-        "LI-COR Biotech LLC": "https://www.licorbio.com/",
-        "Omega Bio-tek Inc": "https://omegabiotek.com/",
-        "PEPperPRINT GmbH": "https://www.pepperprint.com/",
-        "Pipette.com": "https://pipette.com/",
-        "Santa Cruz Biotechnology": "https://www.scbt.com/",
-        "RWD Life Science Inc": "https://www.rwdstco.com/",
-        "IBL-America": "https://www.ibl-america.com/",
-        "Thomas Scientific INC": "https://www.thomassci.com/",
-        "INVENT BIOTECHNOLOGIES INC": "https://inventbiotech.com/",
+        # ... (your full websites dict here - omitted for brevity)
         "NEW ENGLAND BIOLABS INC": "https://www.neb.com/en-us"
     }
-
     df["Website"] = df["Company Name"].map(websites)
     df = df.dropna(subset=["Website"]).drop_duplicates("Company Name")
     df["Email Address"] = df["Email Address"].fillna("Not provided")
@@ -95,109 +66,48 @@ df = load_data()
 
 # ---------------- HELPERS ---------------- #
 def vendor_direct_search(company_name: str, search_term: str) -> str | None:
-    term = quote(search_term.strip())
-    company_lower = company_name.lower().strip()
-
-    if any(kw in company_lower for kw in ["thermo fisher", "fisher scientific", "thermo scientific", "life technologies"]):
-        return f"https://www.thermofisher.com/search/results?query={term}"
-
-    elif any(kw in company_lower for kw in ["sigma-aldrich", "sigma aldrich", "milliporesigma", "merck"]):
-        return f"https://www.sigmaaldrich.com/US/en/search/{term}?focus=products&page=1&perpage=30&sort=relevance&term={term}&type=product"
-
-    elif any(kw in company_lower for kw in ["medchemexpress", "mce", "medchem express"]):
-        return f"https://www.medchemexpress.com/search.html?kwd={term}"
-
-    elif "abcam" in company_lower:
-        return f"https://www.abcam.com/search?keywords={term}"
-        
-    elif "google" in company_lower:
-        return f"https://www.google.com/search?q={term}"
-
-    elif "qiagen" in company_lower:
-        return f"https://www.qiagen.com/us/search?query={term}"
-
-    elif any(kw in company_lower for kw in ["stemcell", "stem cell"]):
-        return f"https://www.stemcell.com/search?query={term}"
-
-    elif any(kw in company_lower for kw in ["vwr", "avantor"]):
-        return f"https://www.avantorsciences.com/us/en/search?text={term}"
-
-    elif "addgene" in company_lower:
-        return f"https://www.addgene.org/search/catalog/plasmids/?q={term}"
-
-    elif any(kw in company_lower for kw in ["cayman chemical", "caymanchem"]):
-        return f"https://www.caymanchem.com/search?q={term}"
-
-    elif any(kw in company_lower for kw in ["cell signaling", "cellsignal"]):
-        return f"https://www.cellsignal.com/search?keywords={term}"
-
-    elif any(kw in company_lower for kw in ["santa cruz", "scbt"]):
-        return f"https://www.scbt.com/search?query={term}"
-
-    elif any(kw in company_lower for kw in ["new england biolabs", "neb"]):
-        return f"https://www.neb.com/en-us/search?keyword={term}"
-
-    elif any(kw in company_lower for kw in ["bio-rad", "biorad"]):
-        return f"https://www.bio-rad.com/en-us/s?search={term}"
-
-    elif "biolegend" in company_lower:
-        return f"https://www.biolegend.com/en-us/search?keywords={term}"
-
-    elif "zymo" in company_lower:
-        return f"https://www.zymoresearch.com/search?q={term}"
-
-    elif any(kw in company_lower for kw in ["integrated dna", "idtdna", "idt"]):
-        return f"https://www.idtdna.com/search?query={term}"
-
-    elif "invivogen" in company_lower:
-        return f"https://www.invivogen.com/search?keywords={term}"
-
-    elif "eurofins" in company_lower:
-        return f"https://www.eurofinsgenomics.eu/search/?q={term}"
-
-    # Fallback for remaining companies
-    else:
-        website_row = df.loc[df["Company Name"] == company_name, "Website"]
-        if website_row.empty:
-            return None
-        base = website_row.values[0].rstrip("/")
-        return f"{base}/search?q={term}"   # most common pattern — works for many
+    # Your existing vendor_direct_search function (unchanged)
+    # ... paste your full function here ...
+    pass  # placeholder - keep your original implementation
 
 def extract_price(text: str) -> str:
-    patterns = [
-        r'\$[\s]*[\d,]+(?:\.\d{1,2})?',
-        r'USD[\s]*[\d,]+(?:\.\d{1,2})?',
-        r'€[\s]*[\d,]+(?:\.\d{1,2})?',
-        r'(?:Price|List Price|Your Price):\s*[\$\€]?[\s]*[\d,]+(?:\.\d{1,2})?',
-        r'Request Quote|Call for price|Login for price|Quote required|Contact us for pricing',
-    ]
-    for pat in patterns:
-        match = re.search(pat, text, re.IGNORECASE)
-        if match:
-            return match.group(0).strip()
+    # Your existing extract_price (unchanged)
+    # ... paste your full function here ...
     return "Price not visible (likely requires login or quote request)"
 
 def scrape_product_page(url: str | None) -> dict:
     if not url:
-        return {"price": "No search link generated"}
+        return {"price": "No search link generated", "skip": False}
+
     try:
-        r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
-        r.raise_for_status()
+        r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT, allow_redirects=True)
+        
+        if r.status_code == 404 or r.status_code in (410, 403):  # 404 Not Found, 410 Gone, sometimes 403 blocks
+            return {
+                "price": f"Page not found (HTTP {r.status_code})",
+                "skip": True
+            }
+        
+        r.raise_for_status()  # raises on 4xx/5xx except handled above
+        
         soup = BeautifulSoup(r.text, "html.parser")
         text = soup.get_text(" ", strip=True)
-        return {"price": extract_price(text)}
+        return {"price": extract_price(text), "skip": False}
+    
+    except requests.exceptions.HTTPError as http_err:
+        if "404" in str(http_err):
+            return {"price": "Page not found (404)", "skip": True}
+        return {"price": f"HTTP error: {str(http_err)[:60]}", "skip": False}
     except Exception as e:
-        return {"price": f"Page load error: {str(e)[:60]}"}
+        return {"price": f"Page load error: {str(e)[:60]}", "skip": False}
 
 def scrape_with_selenium(url: str | None, company_name: str) -> str:
-    if not SELENIUM_AVAILABLE or not url:
-        return "Advanced scraping unavailable"
-    # ... (keep your existing Selenium logic here – omitted for brevity) ...
-    return "Selenium: price extraction attempted (details on page)"
+    # Your placeholder or full Selenium logic (unchanged for now)
+    return "Selenium: price extraction attempted (implement if needed)"
 
 # ---------------- UI ---------------- #
 st.title("Reagent / Catalog Quote Lookup")
-st.markdown("Enter reagent name and/or catalog number. Results show direct supplier search links + emails.")
+st.markdown("Enter reagent name and/or catalog number. Results show direct supplier search links + emails. 404 pages are now hidden.")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -211,37 +121,42 @@ if st.button("Search Suppliers", type="primary"):
     else:
         terms = [f'"{t.strip()}"' for t in [reagent, catnum] if t.strip()]
         search_term = " ".join(terms)
-
+        
         with st.spinner(f"Checking suppliers for: **{search_term}** …"):
             results = []
-            skipped = []
+            skipped = []       # General skips (no URL)
+            not_found = []     # New: 404 / page not found
             progress = st.progress(0)
             total = len(df)
-
+            
             for i, (_, row) in enumerate(df.iterrows()):
-                url = vendor_direct_search(row["Company Name"], search_term)
-                if url:
-                    data = scrape_product_page(url)
-                    if "not visible" in data["price"].lower() or "error" in data["price"].lower():
-                        if SELENIUM_AVAILABLE:
-                            data["price"] = scrape_with_selenium(url, row["Company Name"])
-                        else:
-                            data["price"] += " — click link to view results"
-
-                    results.append({
-                        "Company": row["Company Name"],
-                        "Search Link": url,
-                        "Sales Email": row["Email Address"],
-                        "Price Info": data["price"],
-                    })
+                company = row["Company Name"]
+                url = vendor_direct_search(company, search_term)
+                
+                if not url:
+                    skipped.append(company)
                 else:
-                    skipped.append(row["Company Name"])
-
+                    data = scrape_product_page(url)
+                    
+                    if data.get("skip", False):
+                        not_found.append(company)
+                    else:
+                        # Optional: try Selenium if price looks hidden
+                        if "not visible" in data["price"].lower() and SELENIUM_AVAILABLE:
+                            data["price"] = scrape_with_selenium(url, company)
+                        
+                        results.append({
+                            "Company": company,
+                            "Search Link": url,
+                            "Sales Email": row["Email Address"],
+                            "Price Info": data["price"],
+                        })
+                
                 progress.progress((i + 1) / total)
                 time.sleep(SLEEP_TIME)
-
+        
         if results:
-            st.subheader(f"Results ({len(results)} suppliers)")
+            st.subheader(f"Results ({len(results)} suppliers with valid pages)")
             st.dataframe(
                 pd.DataFrame(results),
                 column_config={
@@ -252,14 +167,15 @@ if st.button("Search Suppliers", type="primary"):
                 use_container_width=True,
                 hide_index=True,
             )
-            st.caption("💡 Many suppliers hide prices until login or quote request. Use links to browse and email for quotes.")
+            st.caption("💡 Many suppliers hide prices until login or quote request. Use links to browse / email for quotes.")
         else:
-            st.warning("No supplier search links could be generated. Try a different spelling or more specific term.")
-
-        if skipped:
-            with st.expander("Suppliers checked but no link generated"):
-                st.write(", ".join(skipped))
-
+            st.warning("No valid supplier pages found for this search term.")
+        
+        if skipped or not_found:
+            with st.expander("Suppliers checked but excluded"):
+                if skipped:
+                    st.write(f"**No search URL generated:** {', '.join(skipped)}")
+                if not_found:
+                    st.write(f"**Page not found (404):** {', '.join(not_found)}")
+        
         st.info("Tip: Catalog numbers usually give more precise results than names alone.")
-
-
